@@ -1,6 +1,6 @@
 # Loss Simulator
 
-**[▶ Try it live](https://YOUR-USERNAME.github.io/loss-simulator/)**: runs in your browser, nothing to install.
+**[▶ Try it live](https://github.com/3htan/loss-simulator)**: runs in your browser, nothing to install.
 
 A Monte Carlo model of one year of insurance losses. Pick a claim frequency, a claim-size distribution and the policy terms (deductible and limit), and it simulates tens of thousands of years to show what the insurer should expect to pay on average, in a bad year, and in a 1-in-100 year.
 
