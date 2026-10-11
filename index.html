@@ -1,0 +1,704 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Loss Simulator</title><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap">
+<style>
+/* Layout: sticky input rail on the left (stacks on phones), results column reads summary → table → chart → policy effects → theory */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-2: #eef1f4;
+  --fg: #14202b;
+  --fg-2: #4a5866;
+  --muted: #6f7c89;
+  --line: #d9e0e6;
+  --accent: #0f5b52;
+  --accent-hover: #0b4a42;
+  --accent-fg: #ffffff;
+  --accent-soft: #e2efed;
+  --s1: #2a78d6;   /* ground-up */
+  --s2: #eb6834;   /* insurer */
+  --warn: #9a5b00;
+  --warn-soft: #fbf0dc;
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141a; --surface: #151d25; --surface-2: #1c2630; --fg: #e7ecf1; --fg-2: #a8b4c0;
+    --muted: #7f8c99; --line: #283441; --accent: #4fb3a5; --accent-hover: #6cc4b7; --accent-fg: #06201c;
+    --accent-soft: #15302c; --s1: #3987e5; --s2: #d95926; --warn: #e0a548; --warn-soft: #2e2413;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141a; --surface: #151d25; --surface-2: #1c2630; --fg: #e7ecf1; --fg-2: #a8b4c0;
+  --muted: #7f8c99; --line: #283441; --accent: #4fb3a5; --accent-hover: #6cc4b7; --accent-fg: #06201c;
+  --accent-soft: #15302c; --s1: #3987e5; --s2: #d95926; --warn: #e0a548; --warn-soft: #2e2413;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.num, td.v, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+header.top {
+  border-bottom: 1px solid var(--line); background: var(--surface);
+  padding-block: 14px; padding-inline: 20px;
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+}
+header.top h1 { font-family: var(--font-display); font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; }
+header.top p { margin: 0; color: var(--fg-2); font-size: 0.9rem; }
+
+.shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 20px; padding-inline: 20px; padding-block: 20px 48px; max-width: 1360px; margin-inline: auto; }
+@media (max-width: 900px) { .shell { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; } header.top { padding-inline: 16px; } }
+
+/* ---------- sidebar ---------- */
+aside.inputs {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  align-self: start; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px);
+  max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column;
+}
+@media (max-width: 900px) { aside.inputs { position: static; max-height: none; } }
+fieldset { border: 0; margin: 0; padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+legend.sec { float: left; width: 100%; padding: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+legend.sec + * { clear: both; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.field label { font-size: 0.88rem; font-weight: 500; }
+.field .hint { font-size: 0.78rem; color: var(--muted); }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; align-items: center; }
+input[type="number"], input[type="text"] {
+  width: 100%; font: inherit; font-family: var(--font-mono); font-size: 0.86rem; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+}
+input[type="number"]:focus-visible, input[type="text"]:focus-visible, button:focus-visible, input[type="range"]:focus-visible, .seg input:focus-visible + span {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+input:disabled { opacity: 0.45; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg label { position: relative; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; inset: 0; }
+.seg span { display: block; text-align: center; padding: 7px 4px; font-size: 0.84rem; color: var(--fg-2); }
+.seg label + label span { border-left: 1px solid var(--line); }
+.seg input:checked + span { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.sev-note { font-size: 0.8rem; color: var(--fg-2); background: var(--surface-2); border-radius: 6px; padding: 7px 10px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--fg-2); }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+button { font: inherit; cursor: pointer; }
+.chip-btn { font-size: 0.78rem; font-family: var(--font-mono); padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); background: transparent; color: var(--fg-2); }
+.chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ghost { font-size: 0.82rem; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg-2); white-space: nowrap; }
+.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.run-bar { position: sticky; bottom: 0; background: var(--surface); padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); margin-top: auto; }
+.run { width: 100%; padding: 11px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 0.95rem; }
+.run:hover { background: var(--accent-hover); }
+.run:disabled { opacity: 0.7; cursor: progress; }
+.run-status { font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+.run-status.stale { color: var(--warn); }
+.run-status.err { color: var(--warn); font-weight: 500; }
+
+/* ---------- results ---------- */
+main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; min-width: 0; }
+@media (max-width: 520px) { .panel { padding: 16px 14px; } }
+.panel h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 4px; text-wrap: balance; }
+.panel .sub { margin: 0 0 14px; color: var(--fg-2); font-size: 0.86rem; }
+
+.verdict { display: flex; flex-direction: column; gap: 10px; }
+.verdict .lead { font-family: var(--font-display); font-size: 1.45rem; line-height: 1.3; margin: 0; text-wrap: balance; }
+.verdict .lead strong { color: var(--s2); }
+.verdict ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); display: flex; flex-direction: column; gap: 4px; max-width: 72ch; }
+.verdict .meta { font-size: 0.78rem; color: var(--muted); font-family: var(--font-mono); }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td .tag { font-size: 0.72rem; color: var(--muted); font-family: var(--font-body); margin-left: 6px; }
+tbody tr:last-child td { border-bottom: 0; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+.chart-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.84rem; color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.tip {
+  position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; font-size: 0.8rem; box-shadow: 0 4px 14px rgba(0,0,0,0.12); min-width: 190px; z-index: 2;
+}
+.tip .r { display: flex; justify-content: space-between; gap: 12px; }
+.tip .r b { font-family: var(--font-mono); font-weight: 500; }
+.tip .h { color: var(--muted); font-family: var(--font-mono); margin-bottom: 4px; }
+.caption { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+details.raw { margin-top: 10px; font-size: 0.84rem; }
+details.raw summary { cursor: pointer; color: var(--accent); }
+details.raw .tbl-wrap { max-height: 320px; overflow: auto; margin-top: 8px; }
+
+.effects { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.effect { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.effect .k { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.effect .val { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 500; }
+.effect .d { font-size: 0.8rem; color: var(--fg-2); }
+.meter { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+.check-tbl td.ok { color: var(--accent); }
+.check-tbl td.off { color: var(--warn); }
+
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 28px; }
+.how h3 { font-size: 0.95rem; margin: 0 0 6px; }
+.how p { margin: 0 0 8px; color: var(--fg-2); font-size: 0.9rem; max-width: 65ch; }
+.formula { font-family: var(--font-mono); font-size: 0.85rem; background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin: 6px 0 10px; overflow-x: auto; white-space: nowrap; color: var(--fg); }
+.exam { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; grid-column: 1 / -1; }
+@media (prefers-reduced-motion: no-preference) { .meter i { transition: width .4s ease; } }
+</style>
+
+<header class="top">
+  <h1>Loss Simulator</h1>
+  <p>Monte Carlo model of one policy year: Poisson claim counts, a severity distribution, a per-claim deductible and limit.</p>
+</header>
+
+<div class="shell">
+  <aside class="inputs" aria-label="Simulation inputs">
+    <form id="form" novalidate>
+      <fieldset>
+        <legend class="sec">Frequency · N ~ Poisson(λ)</legend>
+        <div class="field">
+          <div class="field-head"><label for="lam">Mean claims per year, λ</label></div>
+          <div class="pair">
+            <input type="range" id="lam-r" min="0.1" max="50" step="0.1" aria-label="λ slider">
+            <input type="number" id="lam" min="0.01" max="1000" step="0.1" value="3">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="sec">Severity · X per claim</legend>
+        <div class="seg" role="radiogroup" aria-label="Severity distribution">
+          <label><input type="radio" name="dist" id="dist-exp" value="exp"><span>Exponential</span></label>
+          <label><input type="radio" name="dist" id="dist-ln" value="ln" checked><span>Lognormal</span></label>
+          <label><input type="radio" name="dist" id="dist-gam" value="gam"><span>Gamma</span></label>
+        </div>
+        <div id="p-exp" class="field" hidden>
+          <div class="field-head"><label for="expTheta">Mean θ</label><span class="hint">f(x) = e^(−x/θ)/θ</span></div>
+          <div class="pair">
+            <input type="range" id="expTheta-r" min="100" max="50000" step="100" aria-label="θ slider">
+            <input type="number" id="expTheta" min="1" step="100" value="5000">
+          </div>
+        </div>
+        <div id="p-ln" class="fieldgroup" style="display:contents">
+          <div class="field">
+            <div class="field-head"><label for="lnMu">μ (log-scale location)</label></div>
+            <div class="pair">
+              <input type="range" id="lnMu-r" min="0" max="14" step="0.05" aria-label="μ slider">
+              <input type="number" id="lnMu" step="0.05" value="8">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="lnSigma">σ (log-scale spread)</label></div>
+            <div class="pair">
+              <input type="range" id="lnSigma-r" min="0.05" max="3" step="0.05" aria-label="σ slider">
+              <input type="number" id="lnSigma" min="0.01" step="0.05" value="1.2">
+            </div>
+          </div>
+        </div>
+        <div id="p-gam" class="fieldgroup" style="display:contents">
+          <div class="field">
+            <div class="field-head"><label for="gamAlpha">Shape α</label></div>
+            <div class="pair">
+              <input type="range" id="gamAlpha-r" min="0.1" max="20" step="0.1" aria-label="α slider">
+              <input type="number" id="gamAlpha" min="0.01" step="0.1" value="2">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><label for="gamTheta">Scale θ</label></div>
+            <div class="pair">
+              <input type="range" id="gamTheta-r" min="100" max="50000" step="100" aria-label="θ slider">
+              <input type="number" id="gamTheta" min="1" step="100" value="3000">
+            </div>
+          </div>
+        </div>
+        <div class="sev-note" id="sevNote"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="sec">Policy terms · per claim</legend>
+        <div class="field">
+          <div class="field-head"><label for="ded">Deductible, d</label></div>
+          <div class="pair">
+            <input type="range" id="ded-r" min="0" max="50000" step="250" aria-label="Deductible slider">
+            <input type="number" id="ded" min="0" step="250" value="1000">
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="lim">Policy limit, u</label><span class="hint">max payment per claim</span></div>
+          <div class="pair">
+            <input type="range" id="lim-r" min="1000" max="500000" step="1000" aria-label="Limit slider">
+            <input type="number" id="lim" min="1" step="1000" value="25000">
+          </div>
+          <label class="check"><input type="checkbox" id="noLim"> No limit</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend class="sec">Simulation</legend>
+        <div class="field">
+          <div class="field-head"><label for="years">Simulated years</label></div>
+          <input type="number" id="years" min="100" max="1000000" step="1000" value="10000">
+          <div class="chips">
+            <button type="button" class="chip-btn" data-years="10000">10k</button>
+            <button type="button" class="chip-btn" data-years="100000">100k</button>
+            <button type="button" class="chip-btn" data-years="500000">500k</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="seed">Random seed</label><span class="hint">same seed → same result</span></div>
+          <div class="row2">
+            <input type="number" id="seed" step="1" value="20261010">
+            <button type="button" class="ghost" id="newSeed">New seed</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="thr">Loss threshold, T</label><span class="hint">for P(S &gt; T)</span></div>
+          <input type="number" id="thr" min="0" step="1000" value="50000">
+        </div>
+      </fieldset>
+
+      <div class="run-bar">
+        <button type="submit" class="run" id="run">Run simulation</button>
+        <div class="run-status" id="status" role="status"></div>
+      </div>
+    </form>
+  </aside>
+
+  <main>
+    <section class="panel verdict" aria-labelledby="verdictH">
+      <h2 id="verdictH" class="sr" style="font-size:.72rem;font-family:var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0">In plain English</h2>
+      <p class="lead" id="lead">Running the first simulation…</p>
+      <ul id="bullets"></ul>
+      <div class="meta" id="meta"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="statsH">
+      <h2 id="statsH">Annual loss statistics</h2>
+      <p class="sub">S = total for the year. Ground-up is before the deductible and limit; insurer is what the policy pays.</p>
+      <div class="tbl-wrap">
+        <table id="stats">
+          <thead><tr><th>Statistic</th><th><span class="sw" style="background:var(--s1)"></span>Ground-up</th><th><span class="sw" style="background:var(--s2)"></span>Insurer pays</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="histH">
+      <div class="chart-head">
+        <div>
+          <h2 id="histH">Distribution of total annual losses</h2>
+          <p class="sub" style="margin:0">Share of simulated years in each loss band.</p>
+        </div>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--s1)"></span>Ground-up loss</span>
+          <span><span class="sw" style="background:var(--s2)"></span>Insurer payment</span>
+          <span><svg width="18" height="10" aria-hidden="true" style="margin-right:6px"><line x1="1" y1="5" x2="17" y2="5" stroke="var(--fg-2)" stroke-width="1.5" stroke-dasharray="3 3"/></svg>Threshold T</span>
+        </div>
+      </div>
+      <div class="chart" id="chart"></div>
+      <p class="caption" id="chartCap"></p>
+      <details class="raw">
+        <summary>Show histogram as a table</summary>
+        <div class="tbl-wrap"><table id="binTbl"><thead><tr><th>Annual loss band</th><th>Ground-up, % of years</th><th>Insurer, % of years</th></tr></thead><tbody></tbody></table></div>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="effH">
+      <h2 id="effH">What the policy terms do</h2>
+      <p class="sub">Measured per claim across every simulated claim.</p>
+      <div class="effects" id="effects"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="chkH">
+      <h2 id="chkH">Simulation vs. theory</h2>
+      <p class="sub">For a compound Poisson model the ground-up mean and variance have closed forms. Close agreement means the simulation is large enough.</p>
+      <div class="tbl-wrap">
+        <table class="check-tbl" id="checkTbl">
+          <thead><tr><th>Quantity</th><th>Formula</th><th>Theory</th><th>Simulated</th><th>Diff.</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="howH">
+      <h2 id="howH">How it works</h2>
+      <p class="sub">The aggregate loss model behind the numbers, as it appears on actuarial exams.</p>
+      <div class="how">
+        <div>
+          <h3>Aggregate loss is a random sum</h3>
+          <p>A year's total loss adds up a random number of random claims. The count N and each claim size X<sub>i</sub> have their own distributions, and the claim sizes are independent of each other and of N.</p>
+          <div class="formula">S = X₁ + X₂ + … + X<sub>N</sub>,  S = 0 if N = 0</div>
+          <p>When N is Poisson, S has a <em>compound Poisson</em> distribution. It has a point mass at zero, P(S = 0) = e<sup>−λ</sup>, which is the spike in the first bar of the chart.</p>
+        </div>
+        <div>
+          <h3>Moments come from N and X</h3>
+          <p>Conditioning on N gives the general results. For Poisson, Var(N) = E[N] = λ, so they simplify.</p>
+          <div class="formula">E[S] = E[N]·E[X] = λ·E[X]</div>
+          <div class="formula">Var(S) = E[N]·Var(X) + Var(N)·E[X]² = λ·E[X²]</div>
+          <p>Percentiles of S have no simple formula. That is why simulation (or Panjer recursion, or a normal approximation) is used to find VaR.</p>
+        </div>
+        <div>
+          <h3>Deductible and limit act on each claim</h3>
+          <p>With an ordinary deductible d and a policy limit u on the payment, the insurer pays per claim:</p>
+          <div class="formula">Y = min( max(X − d, 0), u )</div>
+          <p>The loss elimination ratio measures how much of the expected loss the deductible removes:</p>
+          <div class="formula">LER = E[X ∧ d] / E[X]</div>
+          <p>A claim hits the limit when X ≥ d + u. The insurer's annual payment is the sum of the Y's.</p>
+        </div>
+        <div>
+          <h3>What one simulated year does</h3>
+          <p>1. Draw N from Poisson(λ).<br>2. Draw N claim sizes from the severity distribution.<br>3. Add them for the ground-up S; apply d and u to each and add for the insurer's total.<br>Repeat for every year, sort the totals, and read off the mean, standard deviation and percentiles.</p>
+          <p>VaR<sub>p</sub> is the p-th percentile of S: the loss exceeded in a share 1 − p of years. VaR<sub>95%</sub> is the "1-in-20-year" loss.</p>
+        </div>
+        <p class="exam">Exam tie-in: frequency/severity models, coverage modifications, LER and aggregate loss models are core material on SOA Exam FAM and ASTAM, and on CAS MAS-I. Try setting the deductible to 0 and the limit off: the insurer and ground-up columns should match exactly.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  // ---------- seeded RNG ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let raw = mulberry32(1), spare = null;
+  const rand = () => { let u; do { u = raw(); } while (u === 0); return u; }; // (0,1)
+  function normal() {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    const u = rand(), v = rand(), r = Math.sqrt(-2 * Math.log(u));
+    spare = r * Math.sin(2 * Math.PI * v);
+    return r * Math.cos(2 * Math.PI * v);
+  }
+  function lgamma(z) { // Lanczos
+    const g = 7, c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+      -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+    if (z < 0.5) return Math.log(Math.PI / Math.abs(Math.sin(Math.PI * z))) - lgamma(1 - z);
+    z -= 1; let x = c[0];
+    for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+    const t = z + g + 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+  }
+  function poisson(lam) {
+    if (lam < 30) { // Knuth multiplication
+      const L = Math.exp(-lam); let k = 0, p = 1;
+      do { k++; p *= rand(); } while (p > L);
+      return k - 1;
+    }
+    // Hörmann (1993) PTRS transformed rejection
+    const slam = Math.sqrt(lam), loglam = Math.log(lam), b = 0.931 + 2.53 * slam,
+      a = -0.059 + 0.02483 * b, invalpha = 1.1239 + 1.1328 / (b - 3.4), vr = 0.9277 - 3.6224 / (b - 2);
+    for (;;) {
+      const U = rand() - 0.5, V = rand(), us = 0.5 - Math.abs(U);
+      const k = Math.floor((2 * a / us + b) * U + lam + 0.43);
+      if (us >= 0.07 && V <= vr) return k;
+      if (k < 0 || (us < 0.013 && V > us)) continue;
+      if (Math.log(V) + Math.log(invalpha) - Math.log(a / (us * us) + b) <= -lam + k * loglam - lgamma(k + 1)) return k;
+    }
+  }
+  function gammaStd(a) { // Marsaglia–Tsang, scale 1
+    if (a < 1) return gammaStd(a + 1) * Math.pow(rand(), 1 / a);
+    const d = a - 1 / 3, c = 1 / Math.sqrt(9 * d);
+    for (;;) {
+      let x, v;
+      do { x = normal(); v = 1 + c * x; } while (v <= 0);
+      v = v * v * v; const u = rand();
+      if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+
+  // ---------- inputs ----------
+  const $ = (id) => document.getElementById(id);
+  const pairs = ["lam", "expTheta", "lnMu", "lnSigma", "gamAlpha", "gamTheta", "ded", "lim"];
+  pairs.forEach((id) => {
+    const n = $(id), r = $(id + "-r");
+    r.value = n.value;
+    r.addEventListener("input", () => { n.value = r.value; changed(); });
+    n.addEventListener("input", () => { if (n.value !== "") r.value = n.value; changed(); });
+  });
+  ["years", "seed", "thr"].forEach((id) => $(id).addEventListener("input", changed));
+  document.querySelectorAll('input[name="dist"]').forEach((el) => el.addEventListener("change", () => { showDist(); changed(); }));
+  $("noLim").addEventListener("change", () => { $("lim").disabled = $("lim-r").disabled = $("noLim").checked; changed(); });
+  document.querySelectorAll("[data-years]").forEach((b) => b.addEventListener("click", () => { $("years").value = b.dataset.years; changed(); }));
+  $("newSeed").addEventListener("click", () => { $("seed").value = Math.floor(Math.random() * 1e8); changed(); });
+
+  const dist = () => document.querySelector('input[name="dist"]:checked').value;
+  function showDist() {
+    const d = dist();
+    $("p-exp").hidden = d !== "exp";
+    $("p-ln").style.display = d === "ln" ? "contents" : "none";
+    $("p-gam").style.display = d === "gam" ? "contents" : "none";
+  }
+  const num = (id) => parseFloat($(id).value);
+
+  function readParams() {
+    const p = {
+      lam: num("lam"), dist: dist(), expTheta: num("expTheta"), lnMu: num("lnMu"), lnSigma: num("lnSigma"),
+      gamAlpha: num("gamAlpha"), gamTheta: num("gamTheta"), ded: num("ded"),
+      lim: $("noLim").checked ? Infinity : num("lim"), years: Math.round(num("years")),
+      seed: Math.round(num("seed")), thr: num("thr"),
+    };
+    const errs = [];
+    if (!(p.lam > 0)) errs.push("λ must be above 0.");
+    if (p.dist === "exp" && !(p.expTheta > 0)) errs.push("θ must be above 0.");
+    if (p.dist === "ln" && !(p.lnSigma > 0 && isFinite(p.lnMu))) errs.push("Lognormal needs a number for μ and σ above 0.");
+    if (p.dist === "gam" && !(p.gamAlpha > 0 && p.gamTheta > 0)) errs.push("Gamma α and θ must both be above 0.");
+    if (!(p.ded >= 0)) errs.push("Deductible must be 0 or more.");
+    if (!(p.lim > 0)) errs.push("Limit must be above 0, or tick No limit.");
+    if (!(p.years >= 100 && p.years <= 1000000)) errs.push("Simulated years must be between 100 and 1,000,000.");
+    if (!isFinite(p.seed)) errs.push("Seed must be a whole number.");
+    if (!(p.thr >= 0)) errs.push("Threshold must be 0 or more.");
+    if (p.lam * p.years > 40e6) errs.push(`That is about ${fmtInt(p.lam * p.years)} claims. Keep λ × years under 40 million.`);
+    return { p, errs };
+  }
+
+  function sevMoments(p) {
+    if (p.dist === "exp") return { m1: p.expTheta, m2: 2 * p.expTheta ** 2 };
+    if (p.dist === "ln") return { m1: Math.exp(p.lnMu + p.lnSigma ** 2 / 2), m2: Math.exp(2 * p.lnMu + 2 * p.lnSigma ** 2) };
+    return { m1: p.gamAlpha * p.gamTheta, m2: p.gamAlpha * (p.gamAlpha + 1) * p.gamTheta ** 2 };
+  }
+  function updateSevNote() {
+    const { p } = readParams();
+    const { m1, m2 } = sevMoments(p);
+    if (!isFinite(m1) || m1 <= 0) { $("sevNote").textContent = "Enter valid severity parameters."; return; }
+    const cv = Math.sqrt(Math.max(m2 - m1 * m1, 0)) / m1;
+    $("sevNote").innerHTML = `Mean claim E[X] = <span class="mono">${fmt$(m1)}</span> · CV = <span class="mono">${cv.toFixed(2)}</span>`;
+  }
+
+  let lastRunKey = null;
+  function changed() {
+    updateSevNote();
+    const s = $("status");
+    if (lastRunKey !== null && JSON.stringify(readParams().p) !== lastRunKey) {
+      s.className = "run-status stale"; s.textContent = "Inputs changed. Run again to update results.";
+    } else if (lastRunKey !== null) { s.className = "run-status"; s.textContent = lastStatus; }
+  }
+
+  // ---------- formatting ----------
+  const fmtInt = (x) => Math.round(x).toLocaleString("en-US");
+  const fmt$ = (x) => (x < 0 ? "−$" : "$") + Math.round(Math.abs(x)).toLocaleString("en-US");
+  function fmt$c(x) {
+    const a = Math.abs(x);
+    if (a >= 1e9) return "$" + +(x / 1e9).toFixed(1) + "B";
+    if (a >= 1e6) return "$" + +(x / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+    if (a >= 1e3) return "$" + +(x / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+    return "$" + Math.round(x);
+  }
+  const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
+  function pctSmart(x) { if (x === 0) return "0%"; if (x < 0.001) return "<0.1%"; return pct(x, x < 0.1 ? 2 : 1); }
+
+  // ---------- simulation ----------
+  function simulate(p) {
+    raw = mulberry32(p.seed >>> 0); spare = null;
+    const n = p.years, G = new Float64Array(n), I = new Float64Array(n);
+    let sev;
+    if (p.dist === "exp") sev = () => -p.expTheta * Math.log(rand());
+    else if (p.dist === "ln") sev = () => Math.exp(p.lnMu + p.lnSigma * normal());
+    else sev = () => p.gamTheta * gammaStd(p.gamAlpha);
+    const d = p.ded, u = p.lim, cap = d + u;
+    let claims = 0, hitLim = 0, belowDed = 0, sumX = 0, sumXd = 0;
+    for (let y = 0; y < n; y++) {
+      const N = poisson(p.lam);
+      let g = 0, ins = 0;
+      for (let k = 0; k < N; k++) {
+        const x = sev();
+        g += x; sumX += x;
+        sumXd += x < d ? x : d;
+        if (x <= d) belowDed++;
+        else if (x >= cap) { ins += u; hitLim++; }
+        else ins += x - d;
+      }
+      claims += N; G[y] = g; I[y] = ins;
+    }
+    return { G, I, claims, hitLim, belowDed, ler: sumX > 0 ? sumXd / sumX : 0 };
+  }
+
+  function describe(arr, thr) {
+    const n = arr.length; let s = 0, s2 = 0, over = 0;
+    for (let i = 0; i < n; i++) { const v = arr[i]; s += v; if (v > thr) over++; }
+    const mean = s / n;
+    for (let i = 0; i < n; i++) { const dv = arr[i] - mean; s2 += dv * dv; }
+    const sorted = arr.slice().sort();
+    const q = (pp) => sorted[Math.min(n - 1, Math.max(0, Math.ceil(pp * n) - 1))];
+    const firstPos = sorted.findIndex((v) => v > 0);
+    let tail = 0, tn = 0; const i99 = Math.min(n - 1, Math.ceil(0.99 * n) - 1);
+    for (let i = i99; i < n; i++) { tail += sorted[i]; tn++; }
+    return { mean, sd: Math.sqrt(s2 / (n - 1)), med: q(0.5), v95: q(0.95), v99: q(0.99), q995: q(0.995),
+      tvar99: tail / tn, pOver: over / n, pZero: firstPos < 0 ? 1 : firstPos / n, sorted };
+  }
+
+  // ---------- rendering ----------
+  let last = null;
+  function render(p, r, gs, is, ms) {
+    last = { p, r, gs, is };
+    const ins = p.lim === Infinity ? "no limit" : fmt$(p.lim) + " limit";
+    // verdict
+    $("lead").innerHTML = is.v95 > 0
+      ? `In 1 of every 20 years, the insurer pays more than <strong class="num">${fmt$(is.v95)}</strong>.`
+      : `The insurer pays nothing in at least <strong class="num">${pctSmart(is.pZero)}</strong> of years, so its 1-in-20-year loss is $0.`;
+    const n = p.years, overN = is.pOver > 0 ? Math.round(1 / is.pOver) : null;
+    const bl = [
+      `In 1 of every 100 years it pays more than <b class="num">${fmt$(is.v99)}</b>; the average of those worst 1% of years is <b class="num">${fmt$(is.tvar99)}</b>.`,
+      `On average the insurer pays <b class="num">${fmt$(is.mean)}</b> a year, which is ${pct(gs.mean > 0 ? is.mean / gs.mean : 0)} of the <b class="num">${fmt$(gs.mean)}</b> average ground-up loss.`,
+      is.pOver > 0
+        ? `The insurer's payments topped your threshold of ${fmt$(p.thr)} in ${pctSmart(is.pOver)} of years${overN >= 2 ? `, about once every ${fmtInt(overN)} years` : ""}.`
+        : `The insurer's payments never topped your threshold of ${fmt$(p.thr)} in ${fmtInt(n)} simulated years.`,
+      `The ${fmt$(p.ded)} deductible removes ${pct(r.ler)} of expected ground-up losses${p.lim === Infinity ? "" : `, and ${pctSmart(r.claims ? r.hitLim / r.claims : 0)} of claims are cut off by the limit`}.`,
+    ];
+    $("bullets").innerHTML = bl.map((b) => `<li>${b}</li>`).join("");
+    $("meta").textContent = `${fmtInt(n)} years · ${fmtInt(r.claims)} claims · seed ${p.seed} · ${ms.toFixed(0)} ms`;
+
+    // stats table
+    const rows = [
+      ["Mean", gs.mean, is.mean], ["Standard deviation", gs.sd, is.sd], ["Median", gs.med, is.med],
+      ["95th percentile", gs.v95, is.v95, "VaR 95%"], ["99th percentile", gs.v99, is.v99, "VaR 99%"],
+      ["Mean of worst 1%", gs.tvar99, is.tvar99, "TVaR 99%"],
+    ];
+    let html = rows.map(([k, a, b, t]) => `<tr><td>${k}${t ? `<span class="tag">${t}</span>` : ""}</td><td class="v">${fmt$(a)}</td><td class="v">${fmt$(b)}</td></tr>`).join("");
+    html += `<tr><td>P(S &gt; ${fmt$(p.thr)})</td><td class="v">${pctSmart(gs.pOver)}</td><td class="v">${pctSmart(is.pOver)}</td></tr>`;
+    html += `<tr><td>P(S = 0)<span class="tag">no payment</span></td><td class="v">${pctSmart(gs.pZero)}</td><td class="v">${pctSmart(is.pZero)}</td></tr>`;
+    $("stats").tBodies[0].innerHTML = html;
+
+    // effects
+    const lr = r.claims ? r.hitLim / r.claims : 0, bd = r.claims ? r.belowDed / r.claims : 0;
+    const eff = [
+      ["Loss elimination ratio", pct(r.ler), r.ler, `E[X ∧ d] / E[X] at d = ${fmt$(p.ded)}. Share of ground-up dollars the deductible removes.`],
+      ["Claims hitting the limit", p.lim === Infinity ? "—" : pctSmart(lr), lr, p.lim === Infinity ? "No limit applied." : `Claims with X ≥ d + u = ${fmt$(p.ded + p.lim)}. ${fmtInt(r.hitLim)} of ${fmtInt(r.claims)} claims.`],
+      ["Claims below the deductible", pctSmart(bd), bd, `Claims of ${fmt$(p.ded)} or less. The insurer pays nothing on these.`],
+      ["Payment ratio", pct(gs.mean > 0 ? is.mean / gs.mean : 0), gs.mean > 0 ? is.mean / gs.mean : 0, `Insurer mean ÷ ground-up mean, after both deductible and ${ins}.`],
+    ];
+    $("effects").innerHTML = eff.map(([k, v, f, d]) =>
+      `<div class="effect"><span class="k">${k}</span><span class="val">${v}</span><div class="meter"><i style="width:${Math.min(100, f * 100).toFixed(1)}%"></i></div><span class="d">${d}</span></div>`).join("");
+
+    // theory check
+    const { m1, m2 } = sevMoments(p);
+    const tm = p.lam * m1, tsd = Math.sqrt(p.lam * m2);
+    const diff = (s, t) => { const d = t ? (s - t) / t : 0; return `<td class="v ${Math.abs(d) < 0.03 ? "ok" : "off"}">${d >= 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(1)}%</td>`; };
+    $("checkTbl").tBodies[0].innerHTML =
+      `<tr><td>E[X]</td><td class="mono">${p.dist === "exp" ? "θ" : p.dist === "ln" ? "e^(μ+σ²/2)" : "αθ"}</td><td class="v">${fmt$(m1)}</td><td class="v">${fmt$(r.claims ? (gs.mean * n) / r.claims : 0)}</td>${diff(r.claims ? (gs.mean * n) / r.claims : 0, m1)}</tr>` +
+      `<tr><td>E[N]</td><td class="mono">λ</td><td class="v">${p.lam.toFixed(2)}</td><td class="v">${(r.claims / n).toFixed(2)}</td>${diff(r.claims / n, p.lam)}</tr>` +
+      `<tr><td>E[S]</td><td class="mono">λ·E[X]</td><td class="v">${fmt$(tm)}</td><td class="v">${fmt$(gs.mean)}</td>${diff(gs.mean, tm)}</tr>` +
+      `<tr><td>SD(S)</td><td class="mono">√(λ·E[X²])</td><td class="v">${fmt$(tsd)}</td><td class="v">${fmt$(gs.sd)}</td>${diff(gs.sd, tsd)}</tr>`;
+
+    drawChart();
+  }
+
+  function niceStep(raw) {
+    const e = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / e;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e;
+  }
+
+  const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true;
+  function drawChart() {
+    if (!last) return;
+    const { p, gs, is } = last;
+    const box = $("chart"), W = Math.max(280, box.clientWidth), narrow = W < 560;
+    const H = narrow ? 240 : 300, m = { l: 46, r: 10, t: 10, b: 30 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    let top = gs.q995 > 0 ? gs.q995 : 1;
+    const B = narrow ? 24 : 40;
+    // round the upper edge so bin edges are readable
+    const bw$ = niceStep(top / B * 0.9); top = bw$ * B;
+    const hg = new Float64Array(B), hi = new Float64Array(B), n = gs.sorted.length;
+    let overflow = 0;
+    for (let i = 0; i < n; i++) {
+      const g = gs.sorted[i], v = is.sorted[i];
+      if (g >= top) overflow++;
+      hg[Math.min(B - 1, Math.floor(g / bw$))]++; hi[Math.min(B - 1, Math.floor(v / bw$))]++;
+    }
+    for (let b = 0; b < B; b++) { hg[b] /= n; hi[b] /= n; }
+    const ymaxRaw = Math.max(...hg, ...hi) || 1, ys = niceStep(ymaxRaw / 4), ymax = Math.ceil(ymaxRaw / ys) * ys;
+    const X = (v) => m.l + (v / top) * pw, Y = (f) => m.t + ph - (f / ymax) * ph;
+    const slot = pw / B, gap = slot > 10 ? 2 : 1, barW = Math.max(1, (slot - gap * 2) / 2);
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Histogram of total annual ground-up losses and insurer payments">`;
+    for (let t = 0; t <= ymax + 1e-12; t += ys) {
+      s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)" stroke-width="1"/>`;
+      s += `<text x="${m.l - 6}" y="${Y(t) + 4}" text-anchor="end">${(t * 100).toFixed(ys * 100 < 1 ? 1 : 0)}%</text>`;
+    }
+    const xs = niceStep(top / (narrow ? 3 : 6));
+    for (let t = 0; t <= top + 1e-9; t += xs) s += `<text x="${X(t)}" y="${H - 10}" text-anchor="middle">${fmt$c(t)}</text>`;
+    s += `<g id="hl"></g>`;
+    const bar = (x, f, c) => {
+      if (f <= 0) return "";
+      const y = Y(f), h = Math.max(1, m.t + ph - y), r = Math.min(2, barW / 2, h);
+      return `<path d="M${x},${m.t + ph}V${y + r}Q${x},${y} ${x + r},${y}H${x + barW - r}Q${x + barW},${y} ${x + barW},${y + r}V${m.t + ph}Z" fill="${c}"/>`;
+    };
+    for (let b = 0; b < B; b++) {
+      const x0 = m.l + b * slot + gap;
+      s += bar(x0, hg[b], "var(--s1)") + bar(x0 + barW, hi[b], "var(--s2)");
+    }
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ph}" y2="${m.t + ph}" stroke="var(--fg-2)" stroke-width="1"/>`;
+    if (p.thr > 0 && p.thr <= top) {
+      const tx = X(p.thr);
+      s += `<line x1="${tx}" x2="${tx}" y1="${m.t}" y2="${m.t + ph}" stroke="var(--fg-2)" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+      s += `<text x="${tx + (tx > W - 80 ? -5 : 5)}" y="${m.t + 12}" text-anchor="${tx > W - 80 ? "end" : "start"}" style="fill:var(--fg-2)">T = ${fmt$c(p.thr)}</text>`;
+    }
+    for (let b = 0; b < B; b++) s += `<rect data-b="${b}" x="${m.l + b * slot}" y="${m.t}" width="${slot}" height="${ph}" fill="transparent"/>`;
+    s += `</svg>`;
+    box.innerHTML = s; box.appendChild(tip);
+    const label = (b) => b === B - 1 ? `${fmt$(b * bw$)} and above` : `${fmt$(b * bw$)} – ${fmt$((b + 1) * bw$)}`;
+    const svg = box.querySelector("svg"), hl = svg.querySelector("#hl");
+    svg.addEventListener("pointermove", (e) => {
+      const t = e.target.closest("rect[data-b]"); if (!t) { tip.hidden = true; hl.innerHTML = ""; return; }
+      const b = +t.dataset.b;
+      hl.innerHTML = `<rect x="${m.l + b * slot}" y="${m.t}" width="${slot}" height="${ph}" fill="var(--surface-2)"/>`;
+      tip.innerHTML = `<div class="h">${label(b)}</div><div class="r"><span><span class="sw" style="background:var(--s1)"></span>Ground-up</span><b>${pctSmart(hg[b])}</b></div><div class="r"><span><span class="sw" style="background:var(--s2)"></span>Insurer</span><b>${pctSmart(hi[b])}</b></div>`;
+      tip.hidden = false;
+      const br = box.getBoundingClientRect(), sc = br.width / W;
+      let lx = (m.l + (b + 1) * slot) * sc + 10;
+      if (lx + tip.offsetWidth > br.width) lx = (m.l + b * slot) * sc - tip.offsetWidth - 10;
+      tip.style.left = Math.max(0, lx) + "px"; tip.style.top = m.t * sc + 20 + "px";
+    });
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; hl.innerHTML = ""; });
+    $("chartCap").textContent = `Bands are ${fmt$(bw$)} wide. The rightmost bar also counts the ${pctSmart(overflow / n)} of years with ground-up losses above ${fmt$(top)}. The first bar includes the ${pctSmart(is.pZero)} of years where the insurer pays nothing.`;
+    $("binTbl").tBodies[0].innerHTML = Array.from({ length: B }, (_, b) =>
+      `<tr><td>${label(b)}</td><td class="v">${pctSmart(hg[b])}</td><td class="v">${pctSmart(hi[b])}</td></tr>`).join("");
+  }
+  let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawChart, 80); }).observe($("chart"));
+
+  // ---------- run ----------
+  let lastStatus = "";
+  $("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const { p, errs } = readParams(), s = $("status"), btn = $("run");
+    if (errs.length) { s.className = "run-status err"; s.textContent = errs[0]; return; }
+    btn.disabled = true; btn.textContent = "Running…"; s.className = "run-status"; s.textContent = `Simulating ${fmtInt(p.years)} years…`;
+    setTimeout(() => {
+      const t0 = performance.now();
+      const r = simulate(p), gs = describe(r.G, p.thr), is = describe(r.I, p.thr);
+      const ms = performance.now() - t0;
+      render(p, r, gs, is, ms);
+      lastRunKey = JSON.stringify(p);
+      lastStatus = `Done: ${fmtInt(p.years)} years in ${(ms / 1000).toFixed(2)} s.`;
+      s.className = "run-status"; s.textContent = lastStatus;
+      btn.disabled = false; btn.textContent = "Run simulation";
+    }, 30);
+  });
+
+  showDist(); updateSevNote();
+  $("form").requestSubmit();
+})();
+</script>
+
+</body></html>
