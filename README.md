@@ -93,4 +93,4 @@ Frequency and severity models, coverage modifications, LER and aggregate loss mo
 
 Built by Ethan Zuniga, applied mathematics student (Pierce College → CSUN), as a portfolio project while preparing for actuarial exams. Developed with AI assistance as part of coursework for the Google AI Professional Certificate. I specified the model, reviewed the math and validated the results.
 
-[LinkedIn](www.linkedin.com/in/ethan-zuniga-476017326) · MIT License
+[LinkedIn](https://www.linkedin.com/in/ethan-zuniga-476017326) · MIT License
