@@ -82,7 +82,7 @@ All checks agree with theory to within about 1%.
 
 ## How to run it
 
-- **Online:** open the [live page](https://YOUR-USERNAME.github.io/loss-simulator/).
+- **Online:** open the [live page](https://3htan.github.io/loss-simulator/).
 - **Locally:** download `index.html` and open it in any modern browser. An internet connection is only needed for the web fonts.
 
 ## Exam connection
